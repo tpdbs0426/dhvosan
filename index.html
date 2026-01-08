@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>오팬무 도감</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+<!-- 상단바 -->
+<header class="bg-white shadow p-4 flex justify-between items-center">
+  <h1 class="text-2xl font-black">오팬무 도감</h1>
+  <div id="authBox"></div>
+</header>
+
+<!-- 컨트롤 -->
+<section class="p-4 flex flex-wrap gap-2 items-center">
+  <input id="search" placeholder="검색" class="border p-2 rounded" oninput="render()" />
+
+  <select id="filterGen" class="border p-2 rounded" onchange="render()">
+    <option value="all">전체</option>
+    <option value="n">n기생만</option>
+    <option value="only">Only 방송</option>
+  </select>
+
+  <select id="sort" class="border p-2 rounded" onchange="render()">
+    <option value="dateDesc">날짜 ↓</option>
+    <option value="dateAsc">날짜 ↑</option>
+    <option value="likeDesc">좋아요 ↓</option>
+    <option value="likeAsc">좋아요 ↑</option>
+  </select>
+
+  <button id="addBtn" onclick="openItemModal()" class="hidden px-4 py-2 bg-indigo-600 text-white rounded font-bold">도감 추가</button>
+</section>
+
+<!-- 카드 -->
+<main class="p-6">
+  <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
+</main>
+
+<!-- 하단 버튼 -->
+<div class="fixed bottom-6 right-6 flex flex-col gap-3">
+  <button onclick="openReportModal()" class="px-4 py-3 bg-indigo-600 text-white rounded-xl font-bold">제보하기</button>
+  <button id="reportAdminBtn" onclick="openReportAdmin()" class="hidden relative px-4 py-3 bg-gray-900 text-white rounded-xl font-bold">
+    제보 확인
+    <span id="reportBadge" class="hidden absolute -top-2 -right-2 bg-red-500 text-white text-xs px-2 rounded-full"></span>
+  </button>
+</div>
+
+<!-- 로그인 모달 -->
+<div id="loginModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center">
+  <div class="bg-white p-6 rounded-xl w-80">
+    <h2 class="font-black mb-4">관리자 로그인</h2>
+    <input id="adminId" placeholder="ID" class="w-full border p-2 mb-2" />
+    <input id="adminPw" type="password" placeholder="PW" class="w-full border p-2 mb-3" />
+    <p id="loginError" class="text-red-500 text-sm hidden">로그인 실패</p>
+    <button onclick="login()" class="w-full bg-indigo-600 text-white py-2 rounded font-bold">로그인</button>
+  </div>
+</div>
+
+<!-- 도감 추가/수정 모달 -->
+<div id="itemModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center">
+  <div class="bg-white p-6 rounded-xl w-full max-w-md">
+    <h2 id="itemTitle" class="font-black mb-3">도감 추가</h2>
+    <input id="itemName" placeholder="이름" class="w-full border p-2 mb-2" />
+    <input id="itemDate" type="date" class="w-full border p-2 mb-2" />
+    <select id="itemGen" class="w-full border p-2 mb-2">
+      <option value="Only 방송">Only 방송</option>
+      ${Array.from({length:30},(_,i)=>`<option>${i+1}기</option>`).join('')}
+    </select>
+    <textarea id="itemDesc" placeholder="설명" class="w-full border p-2 mb-2"></textarea>
+    <input id="itemMedia" placeholder="사진/영상 URL" class="w-full border p-2 mb-3" />
+    <div class="flex gap-2">
+      <button onclick="saveItem()" class="flex-1 bg-indigo-600 text-white py-2 rounded">저장</button>
+      <button onclick="closeItemModal()" class="flex-1 bg-gray-200 py-2 rounded">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- 제보 모달 -->
+<div id="reportModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center">
+  <div class="bg-white p-6 rounded-xl w-full max-w-md">
+    <h2 class="font-black mb-3">제보하기</h2>
+    <input id="rName" placeholder="이름" class="w-full border p-2 mb-2" />
+    <textarea id="rDesc" placeholder="설명" class="w-full border p-2 mb-2"></textarea>
+    <input id="rMedia" placeholder="사진/영상 URL" class="w-full border p-2 mb-3" />
+    <div class="flex gap-2">
+      <button onclick="submitReport()" class="flex-1 bg-indigo-600 text-white py-2 rounded">제보하기</button>
+      <button onclick="closeReportModal()" class="flex-1 bg-gray-200 py-2 rounded">취소</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ADMIN_ID='tpdbs0426', ADMIN_PW='aksu0814';
+let isAdmin = localStorage.getItem('admin')==='1';
+let items = JSON.parse(localStorage.getItem('items')||'[]');
+let reports = JSON.parse(localStorage.getItem('reports')||'[]');
+let editId=null;
+const likeKey = 'likes_'+location.host;
+let likes = JSON.parse(localStorage.getItem(likeKey)||'{}');
+
+function save(){localStorage.setItem('items',JSON.stringify(items));localStorage.setItem('reports',JSON.stringify(reports));localStorage.setItem(likeKey,JSON.stringify(likes));}
+
+function renderAuth(){
+  authBox.innerHTML = isAdmin
+   ? '<button onclick="logout()" class="font-bold">관리자 로그아웃</button>'
+   : '<button onclick="openLogin()" class="font-bold">관리자 로그인</button>';
+  addBtn.classList.toggle('hidden',!isAdmin);
+  reportAdminBtn.classList.toggle('hidden',!isAdmin);
+}
+
+function render(){
+  let list=[...items];
+  const q=search.value;
+  const f=filterGen.value;
+  const s=sort.value;
+  if(q) list=list.filter(i=>i.name.includes(q));
+  if(f==='n') list=list.filter(i=>i.gen!=='Only 방송');
+  if(f==='only') list=list.filter(i=>i.gen==='Only 방송');
+  if(s==='dateDesc') list.sort((a,b)=>b.date.localeCompare(a.date));
+  if(s==='dateAsc') list.sort((a,b)=>a.date.localeCompare(b.date));
+  if(s==='likeDesc') list.sort((a,b)=>(b.likes||0)-(a.likes||0));
+  if(s==='likeAsc') list.sort((a,b)=>(a.likes||0)-(b.likes||0));
+
+  grid.innerHTML=list.map(i=>`<div class="bg-white rounded-xl shadow overflow-hidden">
+    <img src="${i.media}" class="h-48 w-full object-cover" />
+    <div class="p-4">
+      <h3 class="font-black">${i.name}</h3>
+      <p class="text-xs">${i.date} · ${i.gen}</p>
+      <p class="text-sm text-gray-500">${i.desc}</p>
+      <div class="flex justify-between items-center mt-2">
+        <button onclick="toggleLike('${i.id}')" class="text-sm">❤️ ${i.likes||0}</button>
+        ${isAdmin?`<div class="flex gap-2">
+          <button onclick="editItem('${i.id}')">수정</button>
+          <button onclick="delItem('${i.id}')">삭제</button>
+        </div>`:''}
+      </div>
+    </div></div>`).join('');
+
+  reportBadge.textContent=reports.length;
+  reportBadge.classList.toggle('hidden',reports.length===0);
+}
+
+function toggleLike(id){
+  if(likes[id]){likes[id]=false;items.find(i=>i.id===id).likes--;}else{likes[id]=true;items.find(i=>i.id===id).likes=(items.find(i=>i.id===id).likes||0)+1;}
+  save();render();
+}
+
+function openLogin(){loginModal.classList.remove('hidden');}
+function login(){
+  if(adminId.value===ADMIN_ID && adminPw.value===ADMIN_PW){isAdmin=true;localStorage.setItem('admin','1');loginModal.classList.add('hidden');renderAuth();render();}
+  else loginError.classList.remove('hidden');
+}
+function logout(){isAdmin=false;localStorage.removeItem('admin');renderAuth();render();}
+
+function openItemModal(){editId=null;itemModal.classList.remove('hidden');}
+function closeItemModal(){itemModal.classList.add('hidden');}
+function saveItem(){
+  const data={id:editId||Date.now().toString(),name:itemName.value,date:itemDate.value,gen:itemGen.value,desc:itemDesc.value,media:itemMedia.value,likes:0};
+  if(editId){items=items.map(i=>i.id===editId?{...i,...data}:i);} else items.push(data);
+  save();closeItemModal();render();
+}
+function editItem(id){const i=items.find(x=>x.id===id);editId=id;itemName.value=i.name;itemDate.value=i.date;itemGen.value=i.gen;itemDesc.value=i.desc;itemMedia.value=i.media;itemModal.classList.remove('hidden');}
+function delItem(id){if(confirm('정말 삭제하시겠습니까?')){items=items.filter(i=>i.id!==id);save();render();}}
+
+function openReportModal(){reportModal.classList.remove('hidden');}
+function closeReportModal(){reportModal.classList.add('hidden');}
+function submitReport(){reports.push({id:Date.now().toString(),name:rName.value,desc:rDesc.value,media:rMedia.value});save();alert('감사합니다. 검토 후 업데이트 됩니다');closeReportModal();render();}
+function openReportAdmin(){let txt=reports.map(r=>r.name).join('\n');alert(txt||'제보 없음');}
+
+renderAuth();render();
+</script>
+</body>
+</html>
